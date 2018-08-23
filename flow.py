@@ -60,6 +60,8 @@ class OpticalFlowTracker(object):
         self.history = []
         self.hits += 1
         self.hit_streak += 1
+        self.bbox = bbox
+
 
     def predict(self, good_new, good_old, mask):
         """
@@ -192,6 +194,9 @@ class Sort(object):
             if(t not in unmatched_trks):
                 d = matched[np.where(matched[:, 1] == t)[0], 0]
                 trk.update(dets[d, :][0])
+            # else:
+            #     trk.update(trk.bbox)
+
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
@@ -210,11 +215,3 @@ class Sort(object):
         if(len(ret) > 0):
             return np.concatenate(ret)
         return np.empty((0, 5))
-
-
-def parse_args():
-    """Parse input arguments."""
-    parser = argparse.ArgumentParser(description='SORT demo')
-    parser.add_argument('--display', dest='display',
-                        help='Display online tracker output (slow) [False]', action='store_true')
-    args = parser.parse_args()
