@@ -43,7 +43,7 @@ class OpticalFlowTracker(object):
         """
         Initialises a tracker using initial bounding box.
         """
-        self.bbox = bbox
+        self.bbox = bbox[:4]
         self.time_since_update = 0
         self.id = OpticalFlowTracker.count
         OpticalFlowTracker.count += 1
@@ -60,7 +60,11 @@ class OpticalFlowTracker(object):
         self.history = []
         self.hits += 1
         self.hit_streak += 1
-        self.bbox = bbox
+        self.bbox = bbox[:4]
+
+    def hokan(self,bbox):
+        self.bbox == bbox[:4]
+        self.hit_streak += 1
 
 
     def predict(self, good_new, good_old, mask):
@@ -71,16 +75,15 @@ class OpticalFlowTracker(object):
         """
 
         move = 0
-
+        vector = [0,0,0,0]
         for i,(new,old) in enumerate(zip(good_new,good_old)):
             a,b = new.ravel()
             c,d = old.ravel()
-            if self.bbox[0] <= c <= self.bbox[2] and self.bbox[1] <= d <= self.bbox[3] and mask[d, c]==1
+            if self.bbox[0] <= c <= self.bbox[2] and self.bbox[1] <= d <= self.bbox[3] and mask[int(d), int(c)]==1:
                 if (a-c) ** 2 + (b-d) ** 2 > move:
                     vector = (a-c, b-d)
-
         for i in range(4):
-            self.bbox[i] += vector[2 % (i+2)]
+            self.bbox[i] += vector[i % 2]
 
         self.age += 1
         if(self.time_since_update > 0):
@@ -136,7 +139,7 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
 
 
 class Sort(object):
-    def __init__(self, max_age=1, min_hits=3):
+    def __init__(self, max_age=100, min_hits=3):
         """
         Sets key parameters for SORT
         """
@@ -164,25 +167,45 @@ class Sort(object):
         NOTE: The number of objects returned may differ from the number of detections provided.
         """
         self.frame_count += 1
-        if dets == []:
-            return []
 
         # calculate optical flow
-        p0 = cv2.goodFeaturesToTrack(old_gray, mask = mask, **feature_params)
-        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, new_gray, p0, None, **lk_params)
+        if self.trackers:
+            p0 = cv2.goodFeaturesToTrack(old_gray, mask = mask, **self.feature_params)
+            p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, new_gray, p0, None, **self.lk_params)
 
-        good_new = p1[st==1]
-        good_old = p0[st==1]
+            good_new = p1[st==1]
+            good_old = p0[st==1]
 
         # get predicted locations from existing trackers.
         trks = np.zeros((len(self.trackers), 5))
         to_del = []
         ret = []
         for t, trk in enumerate(trks):
-            pos = self.trackers[t].predict(good_new, good_old, mask)[0]
+            pos = self.trackers[t].predict(good_new, good_old, mask)
             trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
             if(np.any(np.isnan(pos))):
                 to_del.append(t)
+
+        if dets == []:
+            #update mask
+            mask *= 0
+            for i in self.trackers:
+                box = i.get_state()
+                mask[box[1]:box[3], box[0]:box[2]] += 1
+            i = len(self.trackers)
+            for trk in reversed(self.trackers):
+                d = trk.get_state()
+                if(trk.time_since_update <= self.max_age):
+                    # +1 as MOT benchmark requires positive
+                    ret.append(np.concatenate((d, [trk.id+1])).reshape(1, -1))
+                i -= 1
+                # remove dead tracklet
+                if(trk.time_since_update > self.max_age):
+                    self.trackers.pop(i)
+            if(len(ret) > 0):
+                return mask, np.concatenate(ret)
+            return mask, []
+
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
         for t in reversed(to_del):
             self.trackers.pop(t)
@@ -194,9 +217,14 @@ class Sort(object):
             if(t not in unmatched_trks):
                 d = matched[np.where(matched[:, 1] == t)[0], 0]
                 trk.update(dets[d, :][0])
-            # else:
-            #     trk.update(trk.bbox)
+            else:
+                trk.hokan(trk.bbox)
 
+        #update mask
+        mask *= 0
+        for i in self.trackers:
+            box = i.get_state()
+            mask[box[1]:box[3], box[0]:box[2]] += 1
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
@@ -204,7 +232,7 @@ class Sort(object):
             self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
-            d = trk.get_state()[0]
+            d = trk.get_state()
             if((trk.time_since_update < 1) and (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)):
                 # +1 as MOT benchmark requires positive
                 ret.append(np.concatenate((d, [trk.id+1])).reshape(1, -1))
@@ -213,5 +241,5 @@ class Sort(object):
             if(trk.time_since_update > self.max_age):
                 self.trackers.pop(i)
         if(len(ret) > 0):
-            return np.concatenate(ret)
-        return np.empty((0, 5))
+            return mask, np.concatenate(ret)
+        return mask, np.empty((0, 5))
