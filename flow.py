@@ -139,7 +139,7 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
 
 
 class Sort(object):
-    def __init__(self, max_age=100, min_hits=3):
+    def __init__(self, max_age=4, min_hits=3):
         """
         Sets key parameters for SORT
         """
@@ -220,12 +220,6 @@ class Sort(object):
             else:
                 trk.hokan(trk.bbox)
 
-        #update mask
-        mask *= 0
-        for i in self.trackers:
-            box = i.get_state()
-            mask[box[1]:box[3], box[0]:box[2]] += 1
-
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
             trk = OpticalFlowTracker(dets[i, :])
@@ -240,6 +234,12 @@ class Sort(object):
             # remove dead tracklet
             if(trk.time_since_update > self.max_age):
                 self.trackers.pop(i)
+        #update mask
+        mask *= 0
+        for i in self.trackers:
+            box = i.get_state()
+            mask[box[1]:box[3], box[0]:box[2]] += 1
+            
         if(len(ret) > 0):
             return mask, np.concatenate(ret)
         return mask, np.empty((0, 5))

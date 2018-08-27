@@ -26,6 +26,7 @@ dets = np.array([[831,156,1002,249,100]], dtype = np.uint16)
 num = 0
 
 while True:
+    print(num)
     ret, frame = vid.read()
 
     if not ret:
@@ -33,16 +34,12 @@ while True:
 
     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    if num:
-        mask, track_bbs_ids = mot_tracker.update(dets, old_gray, frame_gray, mask)
-        print(track_bbs_ids)
+
+    mask, track_bbs_ids = mot_tracker.update(dets, old_gray, frame_gray, mask)
+    print(track_bbs_ids)
+    print(mask[mask == 1])
     old_gray = frame_gray
 
-    if num == 1:
-        for i in dets:
-            mask[i[1]:i[3], i[0]:i[2]] += 1
-
-    if num == 2:
-        dets = []
+    dets = []
 
     num += 1
